@@ -1,2 +1,7 @@
-run:
-	@go run main.go
+run:build
+	@./build/goredis
+
+build:
+	@go build -o build/goredis .
+
+.PHONY: run build
