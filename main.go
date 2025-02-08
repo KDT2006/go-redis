@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"log/slog"
 	"net"
@@ -64,7 +63,16 @@ func (s *Server) acceptLoop() error {
 }
 
 func (s *Server) handleRawMessage(rawMsg []byte) error {
-	log.Println(string(rawMsg))
+	cmd, err := parseCommand(string(rawMsg))
+	if err != nil {
+		return err
+	}
+
+	switch cmd := cmd.(type) {
+	case SetCommand:
+		slog.Info("SET command", "key", cmd.key, "value", cmd.val)
+	}
+
 	return nil
 }
 
@@ -96,7 +104,6 @@ func (s *Server) handleConn(conn net.Conn) {
 }
 
 func main() {
-	fmt.Println("Hello World")
 	cfg := Config{
 		ListenAddress: defaultListenAddress,
 	}
