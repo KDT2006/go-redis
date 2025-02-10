@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
@@ -14,13 +16,20 @@ type Config struct {
 	ListenAddress string
 }
 
+type Message struct {
+	cmd  Command
+	peer *Peer
+}
+
 type Server struct {
 	Config
 	peers     map[*Peer]bool
 	addPeerCh chan *Peer
 	quitch    chan struct{}
-	msgCh     chan []byte
+	msgCh     chan Message
 	ln        net.Listener
+
+	kv *KV
 }
 
 func NewServer(cfg Config) *Server {
@@ -29,7 +38,8 @@ func NewServer(cfg Config) *Server {
 		peers:     make(map[*Peer]bool),
 		addPeerCh: make(chan *Peer),
 		quitch:    make(chan struct{}),
-		msgCh:     make(chan []byte),
+		msgCh:     make(chan Message),
+		kv:        NewKV(),
 	}
 }
 
@@ -62,30 +72,34 @@ func (s *Server) acceptLoop() error {
 	}
 }
 
-func (s *Server) handleRawMessage(rawMsg []byte) error {
-	cmd, err := parseCommand(string(rawMsg))
-	if err != nil {
-		return err
-	}
-
-	switch cmd := cmd.(type) {
+func (s *Server) handleMessage(msg Message) error {
+	switch cmd := msg.cmd.(type) {
 	case SetCommand:
-		slog.Info("SET command", "key", cmd.key, "value", cmd.val)
+		return s.kv.Set(cmd.key, cmd.val)
+	case GetCommand:
+		val, ok := s.kv.Get(cmd.key)
+		if !ok {
+			return fmt.Errorf("key %s not found", cmd.key)
+		}
+		_, err := msg.peer.Write(val)
+		if err != nil {
+			slog.Error("error writing to peer", "err", err)
+		}
 	}
 
 	return nil
 }
 
-// loop for accepting peers
+// loop for accepting peers and messages
 func (s *Server) loop() {
 	for {
 		select {
-		case rawMsg := <-s.msgCh:
-			if err := s.handleRawMessage(rawMsg); err != nil {
+		case msg := <-s.msgCh:
+			if err := s.handleMessage(msg); err != nil {
 				slog.Error("handleRawMessage() error", "err", err)
 			}
 
-			log.Println(rawMsg)
+			// log.Println(rawMsg)
 		case <-s.quitch:
 			return
 		case peer := <-s.addPeerCh:
@@ -97,16 +111,22 @@ func (s *Server) loop() {
 func (s *Server) handleConn(conn net.Conn) {
 	peer := NewPeer(conn, s.msgCh)
 	s.addPeerCh <- peer
-	slog.Info("new peer connected", "remoteAddr", conn.RemoteAddr())
+	// slog.Info("new peer connected", "remoteAddr", conn.RemoteAddr())
 	if err := peer.readLoop(); err != nil {
 		slog.Error("peer read error", "err", err, "remoteAddr", conn.RemoteAddr())
 	}
 }
 
 func main() {
-	cfg := Config{
-		ListenAddress: defaultListenAddress,
+	listenAddr := flag.String("listenAddr", defaultListenAddress, "listen address for the go-redis server")
+	flag.Parse()
+	if *listenAddr == "" {
+		*listenAddr = defaultListenAddress
 	}
+	cfg := Config{
+		ListenAddress: *listenAddr,
+	}
+
 	server := NewServer(cfg)
 	log.Fatal(server.Start())
 }
