@@ -27,6 +27,7 @@ type Server struct {
 	addPeerCh chan *Peer
 	quitch    chan struct{}
 	msgCh     chan Message
+	delPeerCh chan *Peer
 	ln        net.Listener
 
 	kv *KV
@@ -39,6 +40,7 @@ func NewServer(cfg Config) *Server {
 		addPeerCh: make(chan *Peer),
 		quitch:    make(chan struct{}),
 		msgCh:     make(chan Message),
+		delPeerCh: make(chan *Peer),
 		kv:        NewKV(),
 	}
 }
@@ -103,13 +105,17 @@ func (s *Server) loop() {
 		case <-s.quitch:
 			return
 		case peer := <-s.addPeerCh:
+			slog.Info("new peer connected", "remoteAddr", peer.conn.RemoteAddr())
 			s.peers[peer] = true
+		case peer := <-s.delPeerCh:
+			slog.Info("peer disconnected", "remoteAddr", peer.conn.RemoteAddr())
+			delete(s.peers, peer)
 		}
 	}
 }
 
 func (s *Server) handleConn(conn net.Conn) {
-	peer := NewPeer(conn, s.msgCh)
+	peer := NewPeer(conn, s.msgCh, s.delPeerCh)
 	s.addPeerCh <- peer
 	// slog.Info("new peer connected", "remoteAddr", conn.RemoteAddr())
 	if err := peer.readLoop(); err != nil {

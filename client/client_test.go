@@ -8,7 +8,12 @@ import (
 )
 
 func TestNewClient(t *testing.T) {
-	client := NewClient("localhost:5000")
+	client, err := NewClient("localhost:5000")
+	if err != nil {
+		t.Errorf("NewClient() error: %+v", err)
+	}
+	defer client.Close()
+
 	for i := 0; i < 10; i++ {
 		setValue := fmt.Sprintf("bar_%d", i)
 		log.Println("SET => ", setValue)
