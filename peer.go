@@ -39,44 +39,42 @@ func (p *Peer) readLoop() error {
 		if err != nil {
 			log.Fatal(err)
 		}
-		// fmt.Printf("Read %s\n", v.Type())
+
+		var cmd Command
 		if v.Type() == resp.Array {
-			for _, value := range v.Array() {
-				switch value.String() {
-				case CommandSET:
-					// fmt.Println(len(v.Array()))
-					if len(v.Array()) != 3 {
-						return fmt.Errorf("invalid number of arguments for SET command")
-					}
-
-					cmd := SetCommand{
-						key: v.Array()[1].Bytes(),
-						val: v.Array()[2].Bytes(),
-					}
-
-					p.msgCh <- Message{
-						cmd:  cmd,
-						peer: p,
-					}
-
-					fmt.Printf("got SET command %+v\n", cmd)
-
-				case CommandGET:
-					if len(v.Array()) != 2 {
-						return fmt.Errorf("invalid number of arguments for GET command")
-					}
-
-					cmd := GetCommand{
-						key: v.Array()[1].Bytes(),
-					}
-
-					p.msgCh <- Message{
-						cmd:  cmd,
-						peer: p,
-					}
-
-					fmt.Printf("got GET command %+v\n", cmd)
+			rawCMD := v.Array()[0]
+			switch rawCMD.String() {
+			case CommandClient:
+				cmd = ClientCommand{
+					value: v.Array()[1].String(),
 				}
+			case CommandSET:
+				cmd = SetCommand{
+					key: v.Array()[1].Bytes(),
+					val: v.Array()[2].Bytes(),
+				}
+
+				fmt.Printf("got SET command %+v\n", cmd)
+
+			case CommandGET:
+				cmd = GetCommand{
+					key: v.Array()[1].Bytes(),
+				}
+
+				fmt.Printf("got GET command %+v\n", cmd)
+
+			case CommandHello:
+				cmd = HelloCommand{
+					value: v.Array()[1].String(),
+				}
+
+			default:
+				fmt.Printf("got unknown command: %+v\n", v.Array())
+			}
+
+			p.msgCh <- Message{
+				cmd:  cmd,
+				peer: p,
 			}
 		}
 	}

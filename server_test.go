@@ -4,57 +4,55 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sync"
 	"testing"
-	"time"
 
-	"github.com/KDT2006/go-redis/client"
+	"github.com/redis/go-redis/v9"
 )
 
-func TestServerWithMultiplePeers(t *testing.T) {
-	server := NewServer(Config{
-		ListenAddress: ":5001",
-	})
+func TestOfficialRedisClient(t *testing.T) {
+	listenAddr := ":5001"
+	server := NewServer(Config{ListenAddress: listenAddr})
 	go func() {
 		log.Fatal(server.Start())
 	}()
-	time.Sleep(time.Millisecond)
 
-	nClients := 10
-	wg := sync.WaitGroup{}
-	wg.Add(nClients)
-	for i := 0; i < nClients; i++ {
-		go func() {
-			client, err := client.NewClient("localhost:5001")
-			if err != nil {
-				t.Errorf("NewClient() error: %+v", err)
-			}
-			defer client.Close()
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("localhost%s", listenAddr),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+	defer rdb.Close()
+	fmt.Println(rdb)
 
-			setValue := fmt.Sprintf("bar_%d", i)
-			log.Println("SET => ", setValue)
-			if err := client.Set(context.Background(), fmt.Sprintf("foo_%d", i), setValue); err != nil {
-				log.Fatal(err)
-			}
-
-			value, err := client.Get(context.Background(), fmt.Sprintf("foo_%d", i))
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Println("GET => ", value)
-
-			if setValue != value {
-				t.Errorf("SET:%s and GET:%s values don't match", setValue, value)
-			}
-
-			wg.Done()
-		}()
+	testcases := map[string]string{
+		"foo":    "bar",
+		"go":     "pher",
+		"game":   "play",
+		"number": "10000",
 	}
 
-	wg.Wait()
+	for key, val := range testcases {
+		if err := rdb.Set(context.Background(), key, val, 0).Err(); err != nil {
+			log.Fatal(err)
+		}
 
-	time.Sleep(time.Millisecond)
-	if len(server.peers) != 0 {
-		t.Fatalf("expected 0 peers, but got %d", len(server.peers))
+		newVal, err := rdb.Get(context.Background(), key).Result()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if newVal != val {
+			t.Fatalf("expected %s but got %s", val, newVal)
+		}
 	}
+}
+
+func TestMapToRESP(t *testing.T) {
+	in := map[string]string{
+		"first":  "1",
+		"second": "2",
+	}
+
+	out := writeRespMap(in)
+	fmt.Println(string(out))
 }

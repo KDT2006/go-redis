@@ -6,6 +6,8 @@ import (
 	"log"
 	"log/slog"
 	"net"
+
+	"github.com/tidwall/resp"
 )
 
 const (
@@ -76,16 +78,38 @@ func (s *Server) acceptLoop() error {
 
 func (s *Server) handleMessage(msg Message) error {
 	switch cmd := msg.cmd.(type) {
+	case ClientCommand:
+		err := resp.NewWriter(msg.peer.conn).WriteString("OK")
+		if err != nil {
+			return err
+		}
 	case SetCommand:
-		return s.kv.Set(cmd.key, cmd.val)
+		if err := s.kv.Set(cmd.key, cmd.val); err != nil {
+			return err
+		}
+
+		err := resp.NewWriter(msg.peer.conn).WriteString("OK")
+		if err != nil {
+			return err
+		}
 	case GetCommand:
 		val, ok := s.kv.Get(cmd.key)
 		if !ok {
 			return fmt.Errorf("key %s not found", cmd.key)
 		}
-		_, err := msg.peer.Write(val)
+
+		err := resp.NewWriter(msg.peer.conn).WriteString(string(val))
 		if err != nil {
-			slog.Error("error writing to peer", "err", err)
+			return err
+		}
+	case HelloCommand:
+		spec := map[string]string{
+			"server": "redis",
+		}
+
+		_, err := msg.peer.Write(writeRespMap(spec))
+		if err != nil {
+			return fmt.Errorf("error writing to peer: %s", err)
 		}
 	}
 
