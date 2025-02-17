@@ -17,7 +17,7 @@ A minimal Redis-compatible server implementation in Go, built from scratch with 
 
 ### Prerequisites
 
-- Go 1.20 or higher
+- Go 1.20 or higher(recommended)
 - Basic understanding of Redis and its commands
 
 ### Installation
